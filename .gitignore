@@ -1,3 +1,4 @@
 MICCAI_BraTS_2019_Data_Training/*
 __pycache__
 ckpt_brats19/*
+.idea
