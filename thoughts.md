@@ -9,3 +9,21 @@
 - 考虑对原label进行几何运算，如果之后还能保留，则不进行soft， 一个依据就是要尽可能保留小的突起，防止被低通滤波滤掉
 - 或者是结合SVLS和level set，参考17年文章，让模型预测水平集（以水平集作为soft label），区域边缘的像素的标签soft，区域中心的像素的标签hard
 - 可以这样解释为什么要使用level set，因为CNN本身的特点导致无法对边缘精确预测（具体原因是什么看水平集那篇文章）
+- 利用层之间的相似性，进行层之间的配准，然后比较label的差异，得到不确定性
+
+**目前的一个计划**
+Story:
+1. 现在的calibration相关工作在multi-rater的情况下取得较好进展，但是multi-rater的label数据不易获得，
+导致这些工作无法得到更加广泛的应用。为此我们提出一种新的范式，从single-rater的label中获得"multi-rater"的label，从而可以
+使用将这些工作的方法拓展到single-rater的场景中。
+   
+2. SVLS是将LS应用于医学图像分割的很好尝试，但是其也存在问题，比如造成label的高频信息丢失等。我们认为，更加合理的blur方式并不是
+基于临近的其他label，而是基于混淆或不确定度的方式。对于multi-rater，这种混淆或不确定度通常是容易定义并且容易获得的，但是对于
+   single-rater并非如此。为此，我们定义了一种衡量single-rater标签不确定度的方式，并设计了一套流程对其进行提取。基于这种不确定度的
+   LS使得我们得到了更好的分割效果和model calibration。 
+
+
+Phase 1:
+使用2D的分割进行训练，对层片进行随机抽样，获得几组slice，分别训练，然后交叉推理，比较output，获得不同voxel的不确定度
+Phase 2:
+利用不确定度获取soft label，使用soft label为目标，进行3D分割训练
