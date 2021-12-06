@@ -10,6 +10,10 @@
 - 或者是结合SVLS和level set，参考17年文章，让模型预测水平集（以水平集作为soft label），区域边缘的像素的标签soft，区域中心的像素的标签hard
 - 可以这样解释为什么要使用level set，因为CNN本身的特点导致无法对边缘精确预测（具体原因是什么看水平集那篇文章）
 - 利用层之间的相似性，进行层之间的配准，然后比较label的差异，得到不确定性
+- 采用基于patch的纹理或相关方法来获得不确定度
+
+- 直接对onehottrain出来的模型输出做blur，作为最终结果？
+- 我猜他的最大亮点就是简单，我们一旦把这个东西搞复杂了价值就小了
 
 **目前的一个计划**
 Story:
@@ -25,5 +29,18 @@ Story:
 
 Phase 1:
 使用2D的分割进行训练，对层片进行随机抽样，获得几组slice，分别训练，然后交叉推理，比较output，获得不同voxel的不确定度
+这个过程用于捕捉intra-rater variability
 Phase 2:
 利用不确定度获取soft label，使用soft label为目标，进行3D分割训练
+
+
+**我们需要做：**
+需要调研：
+- 有没有已有的工作去估计single rater的label的不确定度(intra-rater的不确定度)？
+- 如何复现文中关于model calibration的结果？（目前复现的只有关于dice的结果）
+
+
+在展示中我们需要：
+- 把这个问题定义好（讲清楚我们的最终目的及临床意义）
+- 梳理我们的思路是啥（label smoothing-uncertainty-获取uncertainty）
+- 工作计划，最终可能的成果
