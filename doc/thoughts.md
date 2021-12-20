@@ -14,9 +14,11 @@
 - 直接对onehottrain出来的模型输出做blur，作为最终结果？
 - 我猜他的最大亮点就是简单，我们一旦把这个东西搞复杂了价值就小了
 - 做类别间的n-d灰度直方图（联合灰度直方图），直方图均衡化
+- 根据微信那篇推送，选择一个三维块，根据方差进行label smoothing，方差大则表示不确定性更强
 
 **目前的一个计划**
 Story:
+
 1. 现在的calibration相关工作在multi-rater的情况下取得较好进展，但是multi-rater的label数据不易获得，
    导致这些工作无法得到更加广泛的应用。为此我们提出一种新的范式，从single-rater的label中获得"multi-rater"的label，从而可以
    使用将这些工作的方法拓展到single-rater的场景中。
