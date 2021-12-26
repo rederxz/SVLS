@@ -34,58 +34,33 @@ def get_svls_filter_3d(kernel_size=3, sigma=1, channels=4):
     svls_filter_3d.weight.requires_grad = False 
     return svls_filter_3d, svls_kernel_3d[0]
 
-class CELossWithSVLS(torch.nn.Module):
+class SVLS(torch.nn.Module):
     def __init__(self, classes=None, sigma=1):
-        super(CELossWithSVLS, self).__init__()
+        super(SVLS, self).__init__()
         self.cls = torch.tensor(classes)
         self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
         self.svls_layer, self.svls_kernel = get_svls_filter_3d(sigma=sigma, channels=classes)
         self.svls_kernel = self.svls_kernel.cuda()
 
-    def forward(self, inputs, labels):
+    def forward(self, labels):
         with torch.no_grad():
             oh_labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
             b, c, d, h, w = oh_labels.shape
             x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
             x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
             svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
-        return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+        return svls_labels
 
-
-class CELossWithLS(torch.nn.Module):
+class LS(torch.nn.Module):
     def __init__(self, classes=None, smoothing=0.0):
-        super(CELossWithLS, self).__init__()
+        super(LS, self).__init__()
         self.complement = 1.0 - smoothing
         self.smoothing = smoothing
         self.cls = torch.tensor(classes)
         self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
 
-    def forward(self, inputs, labels):
+    def forward(self, labels):
         with torch.no_grad():
             oh_labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
             smoothen_label = oh_labels * self.complement + self.smoothing / self.cls
-        return (- smoothen_label * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
-
-class CELossWithSVLS_V2(torch.nn.Module):
-    def __init__(self, classes=None, sigma=1):
-        super(CELossWithSVLS_V2, self).__init__()
-        self.cls = torch.tensor(classes)
-        self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
-        self.svls_layer, self.svls_kernel = get_svls_filter_3d(sigma=sigma, channels=classes)
-        self.svls_kernel = self.svls_kernel.cuda()
-
-    def forward(self, inputs, labels, skeleton):
-        with torch.no_grad():
-            oh_labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
-            b, c, d, h, w = oh_labels.shape
-            x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
-            x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
-            svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
-            # constrain the label by the skeleton
-            sum_skeleton = torch.sum(skeleton, dim=1, keepdim=True)
-            constrained_svls_label = torch.where(
-                sum_skeleton==1,
-                oh_labels,
-                svls_labels)
-
-        return (- constrained_svls_label * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+        return smoothen_label

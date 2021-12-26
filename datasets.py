@@ -3,6 +3,7 @@ import SimpleITK as sitk
 import numpy as np
 import torch
 import random
+from skimage import morphology
 from glob import glob
 from torch.utils.data.dataset import Dataset
 import torch.nn.functional as F
@@ -173,6 +174,95 @@ def get_datasets_brats(data_root=None, normalisation="zscore"):
     val_dataset = brats19(patients_dir_valid, training=False, normalisation=normalisation)
     return train_dataset, val_dataset
 
+def one_hot_coding(label, class_num=4):
+    """get one-hot coding for labels of a sample"""
+    label_oh = np.eye(class_num)[label][0]
+    label_oh = np.transpose(label_oh, (3, 0, 1, 2))
+    
+    return label_oh
 
+def get_dilated_skeleton(label_oh):  # label_oh shape: [class_num, HWD]
+    """get dilated skeleton of one-hot coded labels of a given sample"""
+    label_dilated_skeleton = list()
+    label_dilated_skeleton.append(np.zeros_like(label_oh[0]))  # place holder for the background class (we don't need it)
+    for label_oh_ in label_oh[1:]:  # except for the background class
+        label_oh_skeleton = morphology.skeletonize(label_oh_)
+        label_oh_dilated_skeleton = morphology.dilation(label_oh_skeleton)
+        label_oh_dilated_skeleton = np.where(
+            label_oh_==1, 
+            label_oh_dilated_skeleton, 
+            label_oh_) # make sure that the skeleton is within the label map
+        label_dilated_skeleton.append(label_oh_dilated_skeleton)
+    label_dilated_skeleton = np.stack(label_dilated_skeleton, axis=0)
 
+    return label_dilated_skeleton
 
+class brats19_with_skeleton(Dataset):
+    def __init__(self, patients_dir, training=True, no_seg=False, normalisation="minmax"):
+        super(brats19_with_skeleton, self).__init__()
+        self.normalisation = normalisation
+        self.training = training
+        self.datas = []
+        self.validation = no_seg
+        self.patterns = [ "_flair", "_t1", "_t1ce", "_t2"]
+        self.mean = dict(flair=0.0860377, t1=0.1216296, t1ce=0.07420689, t2=0.09033176)
+        if not no_seg:
+            self.patterns += ["_seg"]
+        for patient_dir in patients_dir:
+            patient_id = patient_dir.name
+            paths = [patient_dir / f"{patient_id}{value}.nii.gz" for value in self.patterns]
+            patient = dict(
+                id=patient_id, flair=paths[0], t1=paths[1], t1ce=paths[2],
+                t2=paths[3], seg=paths[4] if not no_seg else None
+            )
+            self.datas.append(patient)
+
+    def __getitem__(self, idx):
+        _patient = self.datas[idx]
+        patient_image = {key: self.load_nii(_patient[key]) for key in _patient if key not in ["id", "seg"]}
+        if _patient["seg"] is not None:
+            patient_label = self.load_nii(_patient["seg"])
+
+        patient_image = {key: (irm_min_max_preprocess(patient_image[key]) - self.mean[key]) for key in patient_image}
+        patient_image = np.stack([patient_image[key] for key in patient_image])
+        patient_label[patient_label==4] = 3
+        patient_label = patient_label[None,:,:,:]
+        # Remove maximum extent of the zero-background to make future crop more useful
+        z_indexes, y_indexes, x_indexes = np.nonzero(np.sum(patient_image, axis=0) != 0)
+        # Add 1 pixel in each side
+        zmin, ymin, xmin = [max(0, int(np.min(arr) - 1)) for arr in (z_indexes, y_indexes, x_indexes)]
+        zmax, ymax, xmax = [int(np.max(arr) + 1) for arr in (z_indexes, y_indexes, x_indexes)]
+        patient_image = patient_image[:, zmin:zmax, ymin:ymax, xmin:xmax]
+        patient_label = patient_label[:, zmin:zmax, ymin:ymax, xmin:xmax]
+        # default to 128, 128, 128
+        patient_image, patient_label = pad_or_crop_image(patient_image, patient_label, target_size=(128, 192, 192))
+        patient_image, patient_label = patient_image.astype("float16"), patient_label.astype("long")
+        patient_image, patient_label = [torch.from_numpy(x) for x in [patient_image, patient_label]]
+        # get dilated skeleton of label map
+        patient_label_one_hot = one_hot_coding(patient_label)
+        patient_label_skeleton = get_dilated_skeleton(patient_label_one_hot)
+        patient_label_skeleton = torch.from_numpy(patient_label_skeleton.astype('long'))
+        return dict(patient_id=_patient["id"],
+                    image=patient_image, label=patient_label,
+                    seg_path=str(_patient["seg"]), 
+                    crop_indexes=((zmin, zmax), (ymin, ymax), (xmin, xmax)),
+                    skeleton=patient_label_skeleton
+                    )
+
+    @staticmethod
+    def load_nii(path_folder):
+        return sitk.GetArrayFromImage(sitk.ReadImage(str(path_folder)))
+
+    def __len__(self):
+        return len(self.datas)
+
+def get_datasets_brats_with_skeleton(data_root=None, normalisation="zscore"):
+
+    data_root = pathlib.Path(data_root)
+    base_folder_train = pathlib.Path('data/BraTS19/train_train/').resolve()
+    base_folder_valid = pathlib.Path('data/BraTS19/train_valid/').resolve()
+    patients_dir_train = sorted([data_root/x.name for x in base_folder_train.iterdir() if (data_root/x.name).is_dir()])
+    patients_dir_valid = sorted([data_root/x.name for x in base_folder_valid.iterdir() if (data_root/x.name).is_dir()])
+    train_dataset = brats19_with_skeleton(patients_dir_train, training=True, normalisation=normalisation)
+    val_dataset = brats19_with_skeleton(patients_dir_valid, training=False, normalisation=normalisation)
+    return train_dataset, val_dataset
