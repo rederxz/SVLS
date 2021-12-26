@@ -1,4 +1,11 @@
+**问题定义**
+
+- 从label的角度做文章，目标是改进model calibration，次级目标是涨点
+
+
+
 **目前的想法**
+
 - 把label作为一个分布进行采样，即在线的数据增强
   - 或者把voxel进行变形，然后label不变？
   - label smoothing - random sample - voxel deformation
@@ -15,6 +22,17 @@
 - 我猜他的最大亮点就是简单，我们一旦把这个东西搞复杂了价值就小了
 - 做类别间的n-d灰度直方图（联合灰度直方图），直方图均衡化
 - 根据微信那篇推送，选择一个三维块，根据方差进行label smoothing，方差大则表示不确定性更强
+- 能不能用上互信息？LC^2 MIND local structure descriptor? 图像融合？看作一个配准问题，评估配准的程度？
+- 千方百计找自己方法的优点
+- 可以理解SVLS本身的特点：认为分割label本身可以标志真正的边界，在边界处voxel的标签是不可靠的；我们认为可以通过图像本身的特点，获取到voxel的不确定性
+- **解决这些问题**：
+  - 如何评估生成的soft label的合理性？第一步实际上就是由one-hot得到soft label，那么如何评估这一步的结果？
+  - 如何保持小的结构？目前SVLS对于小结构是不友好的，因为其本质是一个低通滤波，如果一个结构本身就很小，那么经过低通滤波后，就可能被滤掉；先super pixel，然后平均一个superpixel内部的标签？或者进行super pixel，然后对一个super pixel内部进行相对距离的soften？或者直接提取label map的边界，以每个块进行相对距离soften？
+  - 目前SVLS的做法是否合理？得到soft label的方式仅仅是基于临近的voxel，然而离得近并不一定容易混淆，或许可以使用super pixel进行分块，然后得到一个伴生矩阵？（对某一类，其他类和它出现在同一个super pixel的概率）目前SVLS进行平滑的地方是否足够？是否可以先进行super pixel，然后边界处的label也要进行soft？
+
+- 使用kl散度进行训练？
+
+
 
 **目前的一个计划**
 Story:
@@ -36,8 +54,10 @@ Phase 2:
 利用不确定度获取soft label，使用soft label为目标，进行3D分割训练
 
 
+
 **我们需要做：**
 需要调研：
+
 - 有没有已有的工作去估计single rater的label的不确定度(intra-rater的不确定度)？
 - 如何复现文中关于model calibration的结果？（目前复现的只有关于dice的结果）
 
