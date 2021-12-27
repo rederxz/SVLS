@@ -85,7 +85,7 @@ class CELossWithSVLS_V2(torch.nn.Module):
             sum_skeleton = torch.sum(skeleton, dim=1, keepdim=True)
             constrained_svls_label = torch.where(
                 sum_skeleton==1,
-                oh_labels,
+                oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float(),
                 svls_labels)
 
         return (- constrained_svls_label * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()

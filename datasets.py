@@ -176,7 +176,7 @@ def get_datasets_brats(data_root=None, normalisation="zscore"):
 
 def one_hot_coding(label, class_num=4):
     """get one-hot coding for labels of a sample"""
-    label_oh = np.eye(class_num)[label][0]
+    label_oh = np.eye(class_num, dtype=np.uint8)[label][0]
     label_oh = np.transpose(label_oh, (3, 0, 1, 2))
     
     return label_oh
