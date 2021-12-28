@@ -4,9 +4,9 @@ import numpy as np
 import pathlib
 import torch
 from model import UNet3D
-from datasets import get_datasets_brats, determinist_collate
+from datasets import get_datasets_brats, get_datasets_brats_with_skeleton, determinist_collate
 from utils import seed_everything, EDiceLoss, DataAugmenter
-from svls import CELossWithLS, CELossWithSVLS
+from svls import CELossWithLS, CELossWithSVLS, CELossWithSVLS_V2
 
 def step_train(data_loader, model, criterion, metric, optimizer): 
     model.train()   
@@ -17,7 +17,11 @@ def step_train(data_loader, model, criterion, metric, optimizer):
         inputs = data_aug(inputs)
         segs = model(inputs)
         segs = data_aug.reverse(segs)
-        loss_ = criterion(segs, targets)
+        if isinstance(criterion, CELossWithSVLS_V2):
+            skeletons = batch["skeleton"].cuda()
+            loss_ = criterion(segs, targets, skeletons)
+        else:
+            loss_ = criterion(segs, targets)
         optimizer.zero_grad()
         loss_.backward()
         optimizer.step()
@@ -29,7 +33,11 @@ def step_valid(data_loader, model, criterion, metric):
         targets = batch["label"].squeeze(1).cuda(non_blocking=True)
         inputs = batch["image"].float().cuda()
         segs = model(inputs)
-        loss_ = criterion(segs, targets)
+        if isinstance(criterion, CELossWithSVLS_V2):
+            skeletons = batch["skeleton"].cuda()
+            loss_ = criterion(segs, targets, skeletons)
+        else:
+            loss_ = criterion(segs, targets)
         segs = segs.data.max(1)[1].squeeze_(1)
         metric_ = metric(segs.detach().cpu(), targets.detach().cpu())
         metrics.extend(metric_)
@@ -45,14 +53,17 @@ def main():
     parser.add_argument('--in_channels', default=4, type=int, help="num of input channels")
     parser.add_argument('--svls_smoothing', default=1.0, type=float, help='SVLS smoothing factor')
     parser.add_argument('--ls_smoothing', default=0.1, type=float, help='LS smoothing factor')
-    parser.add_argument('--train_option', default='SVLS', help="options:[SVLS, LS, OH]")
+    parser.add_argument('--train_option', default='SVLS', help="options:[SVLS, LS, OH, SVLS_V2]")
     parser.add_argument('--epochs', default=200, type=int, help='number of total epochs to run')
     parser.add_argument('--data_root', default='MICCAI_BraTS_2019_Data_Training/HGG_LGG', help='data directory')
     parser.add_argument('--ckpt_dir', default='ckpt_brats19', help='ckpt directory')
     args = parser.parse_args() 
     args.save_folder = pathlib.Path(args.ckpt_dir)
     args.save_folder.mkdir(parents=True, exist_ok=True)
-    train_dataset, val_dataset = get_datasets_brats(data_root=args.data_root)
+    if args.train_option == 'SVLS_V2':
+        train_dataset, val_dataset = get_datasets_brats_with_skeleton(data_root=args.data_root)
+    else:
+        train_dataset, val_dataset = get_datasets_brats(data_root=args.data_root)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
         num_workers=2, pin_memory=False)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False,
@@ -77,6 +88,9 @@ def main():
         args.ls_smoothing = 0.0
         criterion = CELossWithLS(classes=args.num_classes, smoothing=args.ls_smoothing).cuda()
         best_ckpt_name = 'model_best_oh.pth.tar'
+    elif args.train_option == 'SVLS_V2':
+        criterion = CELossWithSVLS_V2(classes=args.num_classes, sigma=args.svls_smoothing).cuda()
+        best_ckpt_name = 'model_best_svls_v2.pth.tar'
     else:
         raise ValueError(args.train_option)
     
