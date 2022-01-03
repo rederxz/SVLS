@@ -35,11 +35,11 @@ def get_svls_filter_3d(kernel_size=3, sigma=1, channels=4):
     return svls_filter_3d, svls_kernel_3d[0]
 
 class SVLS(torch.nn.Module):
-    def __init__(self, classes=None, sigma=1):
+    def __init__(self, classes=None, sigma=1, kernel_size=3):
         super(SVLS, self).__init__()
         self.cls = torch.tensor(classes)
         self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
-        self.svls_layer, self.svls_kernel = get_svls_filter_3d(sigma=sigma, channels=classes)
+        self.svls_layer, self.svls_kernel = get_svls_filter_3d(kernel_size=kernel_size, sigma=sigma, channels=classes)
         self.svls_kernel = self.svls_kernel.cuda()
 
     def forward(self, labels):
