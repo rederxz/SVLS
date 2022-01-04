@@ -89,3 +89,68 @@ class CELossWithSVLS_V2(torch.nn.Module):
                 svls_labels)
 
         return (- constrained_svls_label * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+
+class CELossWithSVLS_V3(torch.nn.Module):
+    def __init__(self, classes=None, sigma=1, scale_factor=1.0):
+        super(CELossWithSVLS_V3, self).__init__()
+        self.cls = torch.tensor(classes)
+        self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
+        self.svls_layer, self.svls_kernel = get_svls_filter_3d(sigma=sigma, channels=classes)
+        self.svls_kernel = self.svls_kernel.cuda()
+        self.scale_factor = scale_factor
+
+    def forward(self, inputs, labels):
+        with torch.no_grad():
+            n, z, x, y = labels.shape
+
+            aff = torch.FloatTensor([[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]]).expand(n, 3, 4)
+            grid_up = F.affine_grid(aff, size=(n, 1, int(self.scale_factor * z),
+                                                     int(self.scale_factor * x),
+                                                     int(self.scale_factor * y))).cuda()
+            grid_down = F.affine_grid(aff, size=(n, 1, z, x, y)).cuda()
+
+            # up sample
+            labels_up_sample = F.grid_sample(labels[:, None, ...].float(), grid_up, mode='nearest').squeeze(dim=1)
+
+            # get svls label
+            oh_labels = (labels_up_sample[...,None] == self.cls_idx).permute(0,4,1,2,3)
+            b, c, d, h, w = oh_labels.shape
+            x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
+            x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
+            svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
+
+            # down sample
+            svls_labels = F.grid_sample(svls_labels.float(), grid_down, mode='bilinear')
+
+        return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+
+class CELossWithSVLS_V4(torch.nn.Module):
+    def __init__(self, classes=None, sigma=1, alpha=0.1):
+        super(CELossWithSVLS_V4, self).__init__()
+        self.cls = torch.tensor(classes)
+        self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
+        self.svls_layer, self.svls_kernel = get_svls_filter_3d(sigma=sigma, channels=classes)
+        self.svls_kernel = self.svls_kernel.cuda()
+        self.alpha = alpha
+
+    def forward(self, inputs, labels):
+        with torch.no_grad():
+            oh_labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
+            b, c, d, h, w = oh_labels.shape
+            x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
+            x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
+            svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
+
+            # find where to apply threshold
+            svls_labels_target = (svls_labels * oh_labels).sum(dim=1, keepdim=True)
+
+            # get the svls labels after threshold
+            svls_labels_target_threshold = oh_labels * (1.0 - self.alpha)  # target part
+            svls_labels_other_threshold = svls_labels * (oh_labels == 0) * self.alpha \
+                                        / (1.0 - svls_labels_target + 1e-6)  # other part
+                                        
+            svls_labels_threshold = svls_labels_target_threshold + svls_labels_other_threshold
+
+            # apply threshold
+            svls_labels_threshold = torch.where(svls_labels_target >= (1.0 - self.alpha), svls_labels, svls_labels_threshold)
+        return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
