@@ -80,7 +80,6 @@ class CELossWithSVLS(torch.nn.Module):
             x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
             x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
             svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
-        return svls_labels
         return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
 
 
@@ -188,6 +187,23 @@ class CELossWithSVLS_V4(torch.nn.Module):
         return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
 
 class CELossWithSVLS_V5(torch.nn.Module):
+    def __init__(self, classes=None, sigma=1, ratio=1.0):
+        super(CELossWithSVLS_V5, self).__init__()
+        self.cls = torch.tensor(classes)
+        self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
+        self.svls_layer, self.svls_kernel = get_svls_filter_3d_modified(sigma=sigma, channels=classes, ratio=ratio)
+        self.svls_kernel = self.svls_kernel.cuda()
+
+    def forward(self, inputs, labels):
+        with torch.no_grad():
+            oh_labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
+            b, c, d, h, w = oh_labels.shape
+            x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
+            x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
+            svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
+        return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+
+class CELossWithSVLS_VE(torch.nn.Module):
     def __init__(self, classes=None, sigma=1, ratio=1.0):
         super(CELossWithSVLS_V5, self).__init__()
         self.cls = torch.tensor(classes)
