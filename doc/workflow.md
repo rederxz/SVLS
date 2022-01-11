@@ -1,11 +1,13 @@
 **使用流程**
 
 - 下载数据到某个文件夹
-- 克隆并安装```surface-distance```，并重命名文件夹为```surface_distance```
+- 克隆```surface-distance```，并重命名文件夹为```surface_distance```，放在```SVLS```目录下
 
-- 运行```main.py```
+- 在```SVLS```目录下运行```main.py```
 
-
+```bash
+$ CUDA_VISIBLE_DEVICES=1 python main.py --train_option SVLS_V2 --ckpt_dir ckpt/ckpt_brats19_svls_v2_1234 >> log/logfile.log
+```
 
 **拓展**
 
