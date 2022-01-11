@@ -21,6 +21,9 @@ def step_train(data_loader, model, criterion, metric, optimizer):
         if isinstance(criterion, CELossWithSVLS_V2):
             skeletons = batch["skeleton"].cuda()
             loss_ = criterion(segs, targets, skeletons)
+        elif isinstance(criterion, CELossWithSVLS_VE):
+            inputs = data_aug.reverse_2(inputs)
+            loss_ = criterion(segs, targets, inputs)
         else:
             loss_ = criterion(segs, targets)
         optimizer.zero_grad()
@@ -37,6 +40,8 @@ def step_valid(data_loader, model, criterion, metric):
         if isinstance(criterion, CELossWithSVLS_V2):
             skeletons = batch["skeleton"].cuda()
             loss_ = criterion(segs, targets, skeletons)
+        elif isinstance(criterion, CELossWithSVLS_VE):
+            loss_ = criterion(segs, targets, inputs)
         else:
             loss_ = criterion(segs, targets)
         segs = segs.data.max(1)[1].squeeze_(1)
@@ -63,8 +68,10 @@ def main():
     parser.add_argument('--svls_alpha', default=0.1, type=float, help='alpha parameter of SVLS')
     parser.add_argument('--svls_ratio', default=1.0, type=float, help='ratio parameter of SVLS')
     parser.add_argument('--svls_sigma_diff', default=1.0, type=float, help='sigma_diff parameter of SVLS')
-    parser.add_argument('--cosine_annealing_lr', default=True, type=bool, help='whether use cosine annealing lr while training')
-    args = parser.parse_args() 
+    parser.add_argument('--cosine_annealing_lr', action='store_true', help='whether use cosine annealing lr while training')
+    args = parser.parse_args()
+    for k,v in sorted(vars(args).items()):
+        print(k,'=',v)
     args.save_folder = pathlib.Path(args.ckpt_dir)
     args.save_folder.mkdir(parents=True, exist_ok=True)
     if args.train_option == 'SVLS_V2':
@@ -108,7 +115,7 @@ def main():
         criterion = CELossWithSVLS_V5(classes=args.num_classes, sigma=args.svls_smoothing, ratio=args.svls_ratio).cuda()
         best_ckpt_name = 'model_best_svls_v5.pth.tar'
     elif args.train_option == 'SVLS_VE':
-        criterion = CELossWithSVLS_VE(classes=args.num_classes, sigma_diff=args.svls_smoothing, sigma_dist=args.svls_sigma_diff).cuda()
+        criterion = CELossWithSVLS_VE(classes=args.num_classes, sigma_dist=args.svls_smoothing, sigma_diff=args.svls_sigma_diff).cuda()
         best_ckpt_name = 'model_best_svls_ve.pth.tar'
     else:
         raise ValueError(args.train_option)
