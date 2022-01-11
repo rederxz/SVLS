@@ -15,6 +15,7 @@ class DataAugmenter(nn.Module):
         self.transpose = []
         self.flip = []
         self.toggle = False
+        self.toggle_2 = False
 
     def forward(self, x):
         with torch.no_grad():
@@ -22,6 +23,7 @@ class DataAugmenter(nn.Module):
                 self.transpose = random.sample(range(2, x.dim()), 2)
                 self.flip = random.randint(2, x.dim() - 1)
                 self.toggle = not self.toggle
+                self.toggle_2 = not self.toggle_2
                 new_x = x.transpose(*self.transpose).flip(self.flip)
                 return new_x
             else:
@@ -30,6 +32,13 @@ class DataAugmenter(nn.Module):
     def reverse(self, x):
         if self.toggle:
             self.toggle = not self.toggle
+            return x.flip(self.flip).transpose(*self.transpose)
+        else:
+            return x
+
+    def reverse_2(self, x):
+        if self.toggle_2:
+            self.toggle_2 = not self.toggle_2
             return x.flip(self.flip).transpose(*self.transpose)
         else:
             return x
