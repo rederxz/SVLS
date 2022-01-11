@@ -35,11 +35,11 @@ def get_svls_filter_3d(kernel_size=3, sigma=1, channels=4):
     return svls_filter_3d, svls_kernel_3d[0]
 
 class SVLS(torch.nn.Module):
-    def __init__(self, classes=None, sigma=1):
+    def __init__(self, classes=None, sigma=1, kernel_size=3):
         super(SVLS, self).__init__()
         self.cls = torch.tensor(classes)
         self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
-        self.svls_layer, self.svls_kernel = get_svls_filter_3d(sigma=sigma, channels=classes)
+        self.svls_layer, self.svls_kernel = get_svls_filter_3d(kernel_size=kernel_size, sigma=sigma, channels=classes)
         self.svls_kernel = self.svls_kernel.cuda()
 
     def forward(self, labels):
@@ -64,3 +64,34 @@ class LS(torch.nn.Module):
             oh_labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
             smoothen_label = oh_labels * self.complement + self.smoothing / self.cls
         return smoothen_label
+
+class SVLS_V4(torch.nn.Module):
+    def __init__(self, classes=None, sigma=1, alpha=0.1):
+        super(SVLS_V4, self).__init__()
+        self.cls = torch.tensor(classes)
+        self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
+        self.svls_layer, self.svls_kernel = get_svls_filter_3d(sigma=sigma, channels=classes)
+        self.svls_kernel = self.svls_kernel.cuda()
+        self.alpha = alpha
+
+    def forward(self, labels):
+        with torch.no_grad():
+            oh_labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
+            b, c, d, h, w = oh_labels.shape
+            x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
+            x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
+            svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
+
+            # find where to apply threshold
+            svls_labels_target = (svls_labels * oh_labels).sum(dim=1, keepdim=True)
+
+            # get the svls labels after threshold
+            svls_labels_target_threshold = oh_labels * (1.0 - self.alpha)  # target part
+            svls_labels_other_threshold = svls_labels * (oh_labels == 0) * self.alpha \
+                                        / (1.0 - svls_labels_target + 1e-6)  # other part
+                                        
+            svls_labels_threshold = svls_labels_target_threshold + svls_labels_other_threshold
+
+            # apply threshold
+            svls_labels_threshold = torch.where(svls_labels_target >= (1.0 - self.alpha), svls_labels, svls_labels_threshold)
+        return svls_labels_threshold
