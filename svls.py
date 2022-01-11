@@ -203,19 +203,65 @@ class CELossWithSVLS_V5(torch.nn.Module):
             svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
         return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
 
+def get_gaussian_filter(kernel_size=3, sigma=1):
+    # Create a x, y, z coordinate grid of shape (kernel_size, kernel_size, kernel_size, 3)
+    x_coord = torch.arange(kernel_size)
+    x_grid_2d = x_coord.repeat(kernel_size).view(kernel_size, kernel_size)
+    x_grid = x_coord.repeat(kernel_size*kernel_size).view(kernel_size, kernel_size, kernel_size)
+    y_grid_2d = x_grid_2d.t()
+    y_grid  = y_grid_2d.repeat(kernel_size,1).view(kernel_size, kernel_size, kernel_size)
+    z_grid = y_grid_2d.repeat(1,kernel_size).view(kernel_size, kernel_size, kernel_size)
+    xyz_grid = torch.stack([x_grid, y_grid, z_grid], dim=-1).float()
+    mean = (kernel_size - 1)/2.
+    variance = sigma**2.
+    # Calculate the 3-dimensional gaussian kernel
+    gaussian_kernel = (1./(2.*math.pi*variance + 1e-16)) * torch.exp(
+                            -torch.sum((xyz_grid - mean)**2., dim=-1) / (2*variance + 1e-16))
+
+    return gaussian_kernel
+
 class CELossWithSVLS_VE(torch.nn.Module):
-    def __init__(self, classes=None, sigma=1, ratio=1.0):
-        super(CELossWithSVLS_V5, self).__init__()
+    def __init__(self, classes=None, sigma_dist=1, sigma_diff=1):
+        super(CELossWithSVLS_VE, self).__init__()
         self.cls = torch.tensor(classes)
         self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
-        self.svls_layer, self.svls_kernel = get_svls_filter_3d_modified(sigma=sigma, channels=classes, ratio=ratio)
-        self.svls_kernel = self.svls_kernel.cuda()
+        self.dist_weight = get_gaussian_filter(sigma=sigma_dist)
+        self.dist_weight = self.dist_weight[None, None, None, None, None, ...].cuda()
+        self.sigma_diff = sigma_diff
 
-    def forward(self, inputs, labels):
+    def forward(self, inputs, labels, images):
         with torch.no_grad():
+            # grayscale diff weights
+            image_diff = F.pad(images, (1,1,1,1,1,1), mode='replicate') \
+                            .unfold(2, size=3, step=1) \
+                            .unfold(3, size=3, step=1) \
+                            .unfold(4, size=3, step=1) - images[..., None, None, None]
+            image_diff, _ = torch.max(image_diff, dim=1, keepdim=True)  # extract the max difference
+            weights = (1./(2.*math.pi*self.sigma_diff**2 + 1e-16)) * torch.exp(
+                                    -image_diff**2 / (2*self.sigma_diff**2 + 1e-16))
+            del image_diff
+            
+            # elementwise poduct to combine diff_weights and dist_weight
+            weights = weights * self.dist_weight
+
+            # Make sure sum of values in gaussian kernel equals 1 and sum_neighbors == center
+            weights = weights / torch.sum(weights, dim=(-3, -2, -1), keepdim=True)
+            neighbors_sum = 1 - weights[..., 1:2,1:2,1:2]
+            weights[..., 1:2,1:2,1:2] = neighbors_sum
+            weights = weights / neighbors_sum
+            del neighbors_sum
+
+            # get label patches
             oh_labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
             b, c, d, h, w = oh_labels.shape
-            x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
-            x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
-            svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
-        return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+            oh_labels = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
+            label_oh_patches = F.pad(oh_labels, (1,1,1,1,1,1), mode='replicate') \
+                                .unfold(2, size=3, step=1) \
+                                .unfold(3, size=3, step=1) \
+                                .unfold(4, size=3, step=1)
+
+            # get smoothed labels
+            label_svls_ve_ = label_oh_patches * weights / torch.sum(weights, dim=(-3, -2, -1), keepdim=True)
+            label_svls_ve = torch.sum(label_svls_ve_, dim=(-3, -2, -1))
+            del label_oh_patches, weights
+        return (- label_svls_ve * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
