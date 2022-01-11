@@ -246,7 +246,7 @@ class CELossWithSVLS_VE(torch.nn.Module):
 
             # Make sure sum of values in gaussian kernel equals 1 and sum_neighbors == center
             weights = weights / torch.sum(weights, dim=(-3, -2, -1), keepdim=True)
-            neighbors_sum = 1 - weights[..., 1:2,1:2,1:2]
+            neighbors_sum = 1 - weights[..., 1:2,1:2,1:2] + 1e-16
             weights[..., 1:2,1:2,1:2] = neighbors_sum
             weights = weights / neighbors_sum
             del neighbors_sum
@@ -263,5 +263,5 @@ class CELossWithSVLS_VE(torch.nn.Module):
             # get smoothed labels
             label_svls_ve_ = label_oh_patches * weights / torch.sum(weights, dim=(-3, -2, -1), keepdim=True)
             label_svls_ve = torch.sum(label_svls_ve_, dim=(-3, -2, -1))
-            del label_oh_patches, weights
+            del label_oh_patches, label_svls_ve_, weights
         return (- label_svls_ve * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
