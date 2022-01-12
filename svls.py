@@ -184,7 +184,7 @@ class CELossWithSVLS_V4(torch.nn.Module):
 
             # apply threshold
             svls_labels_threshold = torch.where(svls_labels_target >= (1.0 - self.alpha), svls_labels, svls_labels_threshold)
-        return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+        return (- svls_labels_threshold * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
 
 class CELossWithSVLS_V5(torch.nn.Module):
     def __init__(self, classes=None, sigma=1, ratio=1.0):
