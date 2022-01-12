@@ -129,31 +129,34 @@ class CELossWithSVLS_V3(torch.nn.Module):
         self.svls_layer, self.svls_kernel = get_svls_filter_3d(sigma=sigma, channels=classes)
         self.svls_kernel = self.svls_kernel.cuda()
         self.scale_factor = scale_factor
+        self.aff = torch.FloatTensor([[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]])
 
     def forward(self, inputs, labels):
         with torch.no_grad():
             n, z, x, y = labels.shape
 
-            aff = torch.FloatTensor([[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]]).expand(n, 3, 4)
+            aff = self.aff.expand(n, 3, 4)
+
+            # up sample
             grid_up = F.affine_grid(aff, size=(n, 1, int(self.scale_factor * z),
                                                      int(self.scale_factor * x),
                                                      int(self.scale_factor * y))).cuda()
-            grid_down = F.affine_grid(aff, size=(n, 1, z, x, y)).cuda()
-
-            # up sample
-            labels_up_sample = F.grid_sample(labels[:, None, ...].float(), grid_up, mode='nearest').squeeze(dim=1)
+            labels = F.grid_sample(labels[:, None, ...].float(), grid_up, mode='nearest').squeeze(dim=1)
+            del grid_up
 
             # get svls label
-            oh_labels = (labels_up_sample[...,None] == self.cls_idx).permute(0,4,1,2,3)
-            b, c, d, h, w = oh_labels.shape
-            x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
-            x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
-            svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
+            labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
+            b, c, d, h, w = labels.shape
+            labels = labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
+            labels = F.pad(labels, (1,1,1,1,1,1), mode='replicate')
+            labels = self.svls_layer(labels)/self.svls_kernel.sum()
 
             # down sample
-            svls_labels = F.grid_sample(svls_labels.float(), grid_down, mode='bilinear')
+            grid_down = F.affine_grid(aff, size=(n, 1, z, x, y)).cuda()
+            labels = F.grid_sample(labels.float(), grid_down, mode='bilinear')
+            del grid_down
 
-        return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+        return (- labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
 
 class CELossWithSVLS_V4(torch.nn.Module):
     def __init__(self, classes=None, sigma=1, alpha=0.1):
@@ -201,6 +204,41 @@ class CELossWithSVLS_V5(torch.nn.Module):
             x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
             x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
             svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
+        return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+
+class CELossWithSVLS_V6(torch.nn.Module):
+    def __init__(self, classes=None, sigma=1, scale_factor=1.0):
+        super(CELossWithSVLS_V6, self).__init__()
+        self.cls = torch.tensor(classes)
+        self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
+        self.svls_layer, self.svls_kernel = get_svls_filter_3d(sigma=sigma, channels=classes)
+        self.svls_kernel = self.svls_kernel.cuda()
+        self.scale_factor = scale_factor
+
+    def forward(self, inputs, labels):
+        # calculate crop padding
+        d_, h_, w_ = labels.shape[-3:]
+        padding_d, padding_h, padding_w = int((d_ - (d_ / self.scale_factor)) / 2), \
+                                        int((h_ - (h_ / self.scale_factor)) / 2), \
+                                        int((w_ - (w_ / self.scale_factor)) / 2)
+
+        with torch.no_grad():
+            # center crop labels
+            labels = labels[..., padding_d:-padding_d, padding_h:-padding_h, padding_w:-padding_w]
+            # interpolate to recover the spatial size
+            labels = F.interpolate(labels[:, None, ...].float(), size=(d_, h_, w_), mode='nearest')[:, 0, ...]
+            # get svls label for scaled label maps
+            oh_labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
+            b, c, d, h, w = oh_labels.shape
+            x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
+            x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
+            svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
+
+        # center crop model outputs
+        inputs = inputs[..., padding_d:-padding_d, padding_h:-padding_h, padding_w:-padding_w]
+        # interpolate to recover the spatial size
+        inputs = F.interpolate(inputs, size=(d_, h_, w_), mode='trilinear')
+
         return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
 
 def get_gaussian_filter(kernel_size=3, sigma=1):
