@@ -7,7 +7,8 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from model import UNet3D
 from datasets import get_datasets_brats, get_datasets_brats_with_skeleton, determinist_collate
 from utils import seed_everything, EDiceLoss, DataAugmenter
-from svls import CELossWithLS, CELossWithSVLS, CELossWithSVLS_V2, CELossWithSVLS_V3, CELossWithSVLS_V4, CELossWithSVLS_V5, CELossWithSVLS_VE
+from svls import CELossWithLS, CELossWithSVLS, CELossWithSVLS_V2, CELossWithSVLS_V3, \
+                CELossWithSVLS_V4, CELossWithSVLS_V5, CELossWithSVLS_V6, CELossWithSVLS_VE, CELossWithSVLS_V7
 
 def step_train(data_loader, model, criterion, metric, optimizer): 
     model.train()   
@@ -21,9 +22,10 @@ def step_train(data_loader, model, criterion, metric, optimizer):
         if isinstance(criterion, CELossWithSVLS_V2):
             skeletons = batch["skeleton"].cuda()
             loss_ = criterion(segs, targets, skeletons)
-        elif isinstance(criterion, CELossWithSVLS_VE):
+        elif isinstance(criterion, CELossWithSVLS_VE) or isinstance(criterion, CELossWithSVLS_V7):
             inputs = data_aug.reverse_2(inputs)
             loss_ = criterion(segs, targets, inputs)
+            # print('loss_: ', loss_)
         else:
             loss_ = criterion(segs, targets)
         optimizer.zero_grad()
@@ -40,7 +42,7 @@ def step_valid(data_loader, model, criterion, metric):
         if isinstance(criterion, CELossWithSVLS_V2):
             skeletons = batch["skeleton"].cuda()
             loss_ = criterion(segs, targets, skeletons)
-        elif isinstance(criterion, CELossWithSVLS_VE):
+        elif isinstance(criterion, CELossWithSVLS_VE) or isinstance(criterion, CELossWithSVLS_V7):
             loss_ = criterion(segs, targets, inputs)
         else:
             loss_ = criterion(segs, targets)
@@ -114,9 +116,18 @@ def main():
     elif args.train_option == 'SVLS_V5':
         criterion = CELossWithSVLS_V5(classes=args.num_classes, sigma=args.svls_smoothing, ratio=args.svls_ratio).cuda()
         best_ckpt_name = 'model_best_svls_v5.pth.tar'
+    elif args.train_option == 'SVLS_V6':
+        criterion = CELossWithSVLS_V6(classes=args.num_classes, sigma=args.svls_smoothing, scale_factor=args.start_scale_factor).cuda()
+        best_ckpt_name = 'model_best_svls_v6.pth.tar'
     elif args.train_option == 'SVLS_VE':
         criterion = CELossWithSVLS_VE(classes=args.num_classes, sigma_dist=args.svls_smoothing, sigma_diff=args.svls_sigma_diff).cuda()
         best_ckpt_name = 'model_best_svls_ve.pth.tar'
+    elif args.train_option == 'SVLS_V7':
+        criterion = CELossWithSVLS_V7(classes=args.num_classes, \
+            sigma_dist=args.svls_smoothing, \
+            sigma_diff=args.svls_sigma_diff, \
+            scale_factor=args.start_scale_factor).cuda()
+        best_ckpt_name = 'model_best_svls_v7.pth.tar'
     else:
         raise ValueError(args.train_option)
     
@@ -130,7 +141,9 @@ def main():
     best_loss, best_epoch, best_dices = np.inf, 0, [0,0,0]
     args.start_epoch = 0
     for epoch in range(args.start_epoch, args.epochs):
-        if isinstance(criterion, CELossWithSVLS_V3):  # adjust scale factor
+        if isinstance(criterion, CELossWithSVLS_V3) or \
+            isinstance(criterion, CELossWithSVLS_V6) or \
+            isinstance(criterion, CELossWithSVLS_V7):  # adjust scale factor
             criterion.scale_factor = args.start_scale_factor - (epoch / args.epochs * (args.start_scale_factor - args.end_scale_factor))
             print(f"Current svls scale factor: {criterion.scale_factor}")
         step_train(train_loader, model, criterion, metric, optimizer)
