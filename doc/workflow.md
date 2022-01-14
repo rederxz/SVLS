@@ -2,8 +2,7 @@
 
 - 下载数据到某个文件夹
 - 克隆```surface-distance```，并重命名文件夹为```surface_distance```，放在```SVLS```目录下
-
-- 在```SVLS```目录下运行```main.py```
+- 在```SVLS```目录下运行```main.py```，需要指定train_option，train_option对应的参数，ckpt_dir，输出重定向到log file
 
 ```bash
 $ CUDA_VISIBLE_DEVICES=1 python main.py --train_option SVLS_V2 --ckpt_dir ckpt/ckpt_brats19_svls_v2_1234 >> log/logfile.log

@@ -23,6 +23,7 @@
 
 - 深度学习的label smoothing
 - 分割中的label smoothing，传统上作为分割的后处理步骤
+- model calibration相关工作
 - SVLS
 
 **实验**
