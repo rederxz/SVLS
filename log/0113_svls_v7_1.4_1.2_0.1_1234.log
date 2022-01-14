@@ -1,0 +1,71 @@
+batch_size = 2
+ckpt_dir = ckpt/ckpt_brats19_svls_v7_1.4_1.2_0.1_1234
+cosine_annealing_lr = False
+data_root = MICCAI_BraTS_2019_Data_Training/HGG_LGG
+end_scale_factor = 1.2
+epochs = 200
+in_channels = 4
+lr = 0.0001
+ls_smoothing = 0.1
+num_classes = 4
+start_scale_factor = 1.4
+svls_alpha = 0.1
+svls_ratio = 1.0
+svls_sigma_diff = 0.1
+svls_smoothing = 1.0
+train_option = SVLS_V7
+weight_decay = 0.0
+train sample: 269 train minibatch: 135 valid sample: 66 valid minibatch: 33
+train_option SVLS_V7
+ckpt name: model_best_svls_v7.pth.tar
+Current svls scale factor: 1.4
+epoch:0/200, loss:0.3202, best epoch:0, best loss:0.3202, dice[ET:0.0298, TC:0.0317, WT:0.7407], best dice[ET:0.0298, TC:0.0317, WT:0.7407]
+Current svls scale factor: 1.399
+epoch:1/200, loss:0.2233, best epoch:1, best loss:0.2233, dice[ET:0.0203, TC:0.0369, WT:0.7755], best dice[ET:0.0203, TC:0.0369, WT:0.7755]
+Current svls scale factor: 1.398
+epoch:2/200, loss:0.1660, best epoch:2, best loss:0.1660, dice[ET:0.0195, TC:0.0379, WT:0.6807], best dice[ET:0.0195, TC:0.0379, WT:0.6807]
+Current svls scale factor: 1.397
+epoch:3/200, loss:0.1298, best epoch:3, best loss:0.1298, dice[ET:0.0976, TC:0.2099, WT:0.8040], best dice[ET:0.0976, TC:0.2099, WT:0.8040]
+Current svls scale factor: 1.396
+epoch:4/200, loss:0.1033, best epoch:4, best loss:0.1033, dice[ET:0.4256, TC:0.4892, WT:0.7876], best dice[ET:0.4256, TC:0.4892, WT:0.7876]
+Current svls scale factor: 1.395
+epoch:5/200, loss:0.0837, best epoch:5, best loss:0.0837, dice[ET:0.5762, TC:0.5513, WT:0.8352], best dice[ET:0.5762, TC:0.5513, WT:0.8352]
+Current svls scale factor: 1.394
+epoch:6/200, loss:0.0739, best epoch:6, best loss:0.0739, dice[ET:0.5695, TC:0.5902, WT:0.7696], best dice[ET:0.5695, TC:0.5902, WT:0.7696]
+Current svls scale factor: 1.393
+epoch:7/200, loss:0.0639, best epoch:7, best loss:0.0639, dice[ET:0.6777, TC:0.6890, WT:0.7868], best dice[ET:0.6777, TC:0.6890, WT:0.7868]
+Current svls scale factor: 1.392
+epoch:8/200, loss:0.0551, best epoch:8, best loss:0.0551, dice[ET:0.6916, TC:0.7072, WT:0.8293], best dice[ET:0.6916, TC:0.7072, WT:0.8293]
+Current svls scale factor: 1.391
+epoch:9/200, loss:0.0481, best epoch:9, best loss:0.0481, dice[ET:0.6831, TC:0.7302, WT:0.8523], best dice[ET:0.6831, TC:0.7302, WT:0.8523]
+Current svls scale factor: 1.39
+epoch:10/200, loss:0.0447, best epoch:10, best loss:0.0447, dice[ET:0.6972, TC:0.7164, WT:0.8393], best dice[ET:0.6972, TC:0.7164, WT:0.8393]
+Current svls scale factor: 1.389
+epoch:11/200, loss:0.0441, best epoch:11, best loss:0.0441, dice[ET:0.7015, TC:0.7236, WT:0.8486], best dice[ET:0.7015, TC:0.7236, WT:0.8486]
+Current svls scale factor: 1.388
+epoch:12/200, loss:0.0376, best epoch:12, best loss:0.0376, dice[ET:0.7100, TC:0.7612, WT:0.8464], best dice[ET:0.7100, TC:0.7612, WT:0.8464]
+Current svls scale factor: 1.387
+epoch:13/200, loss:0.0364, best epoch:13, best loss:0.0364, dice[ET:0.6709, TC:0.7388, WT:0.8520], best dice[ET:0.6709, TC:0.7388, WT:0.8520]
+Current svls scale factor: 1.386
+epoch:14/200, loss:0.0346, best epoch:14, best loss:0.0346, dice[ET:0.7148, TC:0.7368, WT:0.8596], best dice[ET:0.7148, TC:0.7368, WT:0.8596]
+Current svls scale factor: 1.385
+epoch:15/200, loss:0.0313, best epoch:15, best loss:0.0313, dice[ET:0.7300, TC:0.7633, WT:0.8644], best dice[ET:0.7300, TC:0.7633, WT:0.8644]
+Current svls scale factor: 1.384
+epoch:16/200, loss:0.0299, best epoch:16, best loss:0.0299, dice[ET:0.7546, TC:0.7753, WT:0.8668], best dice[ET:0.7546, TC:0.7753, WT:0.8668]
+Current svls scale factor: 1.383
+epoch:17/200, loss:0.0294, best epoch:17, best loss:0.0294, dice[ET:0.7266, TC:0.7803, WT:0.8606], best dice[ET:0.7266, TC:0.7803, WT:0.8606]
+Current svls scale factor: 1.382
+epoch:18/200, loss:0.0299, best epoch:17, best loss:0.0294, dice[ET:0.7475, TC:0.7564, WT:0.8452], best dice[ET:0.7266, TC:0.7803, WT:0.8606]
+Current svls scale factor: 1.381
+epoch:19/200, loss:0.0292, best epoch:19, best loss:0.0292, dice[ET:0.7091, TC:0.7553, WT:0.8580], best dice[ET:0.7091, TC:0.7553, WT:0.8580]
+Current svls scale factor: 1.38
+epoch:20/200, loss:0.0281, best epoch:20, best loss:0.0281, dice[ET:0.7525, TC:0.7888, WT:0.8506], best dice[ET:0.7525, TC:0.7888, WT:0.8506]
+Current svls scale factor: 1.379
+epoch:21/200, loss:0.0369, best epoch:20, best loss:0.0281, dice[ET:0.7024, TC:0.7110, WT:0.7872], best dice[ET:0.7525, TC:0.7888, WT:0.8506]
+Current svls scale factor: 1.378
+epoch:22/200, loss:0.0271, best epoch:22, best loss:0.0271, dice[ET:0.7547, TC:0.7756, WT:0.8526], best dice[ET:0.7547, TC:0.7756, WT:0.8526]
+Current svls scale factor: 1.377
+epoch:23/200, loss:0.0280, best epoch:22, best loss:0.0271, dice[ET:0.7276, TC:0.7840, WT:0.8388], best dice[ET:0.7547, TC:0.7756, WT:0.8526]
+Current svls scale factor: 1.376
+epoch:24/200, loss:0.0275, best epoch:22, best loss:0.0271, dice[ET:0.7465, TC:0.7878, WT:0.8341], best dice[ET:0.7547, TC:0.7756, WT:0.8526]
+Current svls scale factor: 1.375

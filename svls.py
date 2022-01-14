@@ -184,7 +184,7 @@ class CELossWithSVLS_V4(torch.nn.Module):
 
             # apply threshold
             svls_labels_threshold = torch.where(svls_labels_target >= (1.0 - self.alpha), svls_labels, svls_labels_threshold)
-        return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+        return (- svls_labels_threshold * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
 
 class CELossWithSVLS_V5(torch.nn.Module):
     def __init__(self, classes=None, sigma=1, ratio=1.0):
@@ -201,6 +201,41 @@ class CELossWithSVLS_V5(torch.nn.Module):
             x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
             x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
             svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
+        return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+
+class CELossWithSVLS_V6(torch.nn.Module):
+    def __init__(self, classes=None, sigma=1, scale_factor=1.0):
+        super(CELossWithSVLS_V6, self).__init__()
+        self.cls = torch.tensor(classes)
+        self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
+        self.svls_layer, self.svls_kernel = get_svls_filter_3d(sigma=sigma, channels=classes)
+        self.svls_kernel = self.svls_kernel.cuda()
+        self.scale_factor = scale_factor
+
+    def forward(self, inputs, labels):
+        # calculate crop padding
+        d_, h_, w_ = labels.shape[-3:]
+        padding_d, padding_h, padding_w = int((d_ - (d_ / self.scale_factor)) / 2), \
+                                        int((h_ - (h_ / self.scale_factor)) / 2), \
+                                        int((w_ - (w_ / self.scale_factor)) / 2)
+
+        with torch.no_grad():
+            # center crop labels
+            labels = labels[..., padding_d:-padding_d, padding_h:-padding_h, padding_w:-padding_w]
+            # interpolate to recover the spatial size
+            labels = F.interpolate(labels[:, None, ...].float(), size=(d_, h_, w_), mode='nearest')[:, 0, ...]
+            # get svls label for scaled label maps
+            oh_labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
+            b, c, d, h, w = oh_labels.shape
+            x = oh_labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).float()
+            x = F.pad(x, (1,1,1,1,1,1), mode='replicate')
+            svls_labels = self.svls_layer(x)/self.svls_kernel.sum()
+
+        # center crop model outputs
+        inputs = inputs[..., padding_d:-padding_d, padding_h:-padding_h, padding_w:-padding_w]
+        # interpolate to recover the spatial size
+        inputs = F.interpolate(inputs, size=(d_, h_, w_), mode='trilinear')
+
         return (- svls_labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
 
 def get_gaussian_filter(kernel_size=3, sigma=1):
@@ -246,7 +281,7 @@ class CELossWithSVLS_VE(torch.nn.Module):
 
             # Make sure sum of values in gaussian kernel equals 1 and sum_neighbors == center
             weights = weights / torch.sum(weights, dim=(-3, -2, -1), keepdim=True)
-            neighbors_sum = 1 - weights[..., 1:2,1:2,1:2]
+            neighbors_sum = 1 - weights[..., 1:2,1:2,1:2] + 1e-16
             weights[..., 1:2,1:2,1:2] = neighbors_sum
             weights = weights / neighbors_sum
             del neighbors_sum
@@ -263,5 +298,96 @@ class CELossWithSVLS_VE(torch.nn.Module):
             # get smoothed labels
             label_svls_ve_ = label_oh_patches * weights / torch.sum(weights, dim=(-3, -2, -1), keepdim=True)
             label_svls_ve = torch.sum(label_svls_ve_, dim=(-3, -2, -1))
-            del label_oh_patches, weights
+            del label_oh_patches, label_svls_ve_, weights
         return (- label_svls_ve * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
+
+class CELossWithSVLS_V7(torch.nn.Module):
+    def __init__(self, classes=None, sigma_dist=1, sigma_diff=1, scale_factor=1.0):
+        super(CELossWithSVLS_V7, self).__init__()
+        self.cls = torch.tensor(classes)
+        self.cls_idx = torch.arange(self.cls).reshape(1, self.cls).cuda()
+        self.dist_weight = get_gaussian_filter(sigma=sigma_dist).half().cuda()
+        self.dist_weight = self.dist_weight[None, None, None, None, None, ...].cuda()
+        self.sigma_diff = sigma_diff
+        self.scale_factor = scale_factor
+        self.aff = torch.FloatTensor([[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]])
+
+    def forward(self, inputs, labels, images):
+        with torch.no_grad():
+            images = images.half()
+            labels = labels.half()
+
+            n, z, x, y = labels.shape
+
+            aff = self.aff.expand(n, 3, 4)
+
+            # up sample
+            grid_up = F.affine_grid(aff, size=(n, 1, int(self.scale_factor * z),
+                                                     int(self.scale_factor * x),
+                                                     int(self.scale_factor * y))).half().cuda()
+            labels = F.grid_sample(labels[:, None, ...], grid_up, mode='nearest').squeeze(dim=1)
+            image_diff = F.grid_sample(images[:, 1:2, ...], grid_up, mode='bilinear')  # only use the first channel
+            del grid_up
+            torch.cuda.empty_cache()
+
+            # grayscale diff weights
+            image_diff = F.pad(image_diff, (1,1,1,1,1,1), mode='replicate') \
+                            .unfold(2, size=3, step=1) \
+                            .unfold(3, size=3, step=1) \
+                            .unfold(4, size=3, step=1) - image_diff[..., None, None, None]
+            # image_diff, _ = torch.max(image_diff, dim=1, keepdim=True)  # extract the max difference
+            # del _
+            # torch.cuda.empty_cache()
+
+            # image_diff = image_diff.float()
+            # print(torch.sum(torch.isnan(image_diff)))
+
+            weights = (1./(2.*math.pi*self.sigma_diff**2 + 1e-16)) * torch.exp(
+                                    -image_diff**2 / (2*self.sigma_diff**2 + 1e-16))
+            # print(torch.sum(torch.isnan(weights)))
+            del image_diff
+            torch.cuda.empty_cache()
+
+            # print("dist加权之前卷积核之和为0的个数：", torch.sum(torch.sum(weights, dim=(-3, -2, -1), keepdim=True)==0))
+            
+            # elementwise poduct to combine diff_weights and dist_weight
+            weights = weights * self.dist_weight
+            # print(torch.sum(torch.isnan(weights)))
+
+            # Make sure sum of values in gaussian kernel equals 1 and sum_neighbors == center
+            # print(torch.sum(torch.sum(weights, dim=(-3, -2, -1), keepdim=True)==0))
+            weights = weights / torch.sum(weights, dim=(-3, -2, -1), keepdim=True)
+            # print('after first divide:', torch.sum(torch.isnan(weights)))
+            neighbors_sum = 1 - weights[..., 1:2,1:2,1:2] + 1e-6
+            # print(torch.sum(neighbors_sum==0))
+            weights[..., 1:2,1:2,1:2] = neighbors_sum
+            weights = weights / neighbors_sum
+            # print(torch.sum(torch.isnan(weights)))
+            del neighbors_sum
+            torch.cuda.empty_cache()
+            weights = weights / torch.sum(weights, dim=(-3, -2, -1), keepdim=True)
+            # print(torch.sum(torch.isnan(weights)))
+
+            # get label patches
+            labels = (labels[...,None] == self.cls_idx).permute(0,4,1,2,3)
+            b, c, d, h, w = labels.shape
+            labels = labels.view(b, c, d, h, w).repeat(1, 1, 1, 1, 1).half()
+            labels = F.pad(labels, (1,1,1,1,1,1), mode='replicate') \
+                                .unfold(2, size=3, step=1) \
+                                .unfold(3, size=3, step=1) \
+                                .unfold(4, size=3, step=1)
+
+            # get smoothed labels
+            labels = torch.sum(labels * weights, dim=(-3, -2, -1))
+            # print(torch.sum(torch.isnan(labels)))
+            del weights
+            torch.cuda.empty_cache()
+
+            # down sample
+            grid_down = F.affine_grid(aff, size=(n, 1, z, x, y)).half().cuda()
+            labels = F.grid_sample(labels, grid_down, mode='bilinear')
+            # print(torch.sum(torch.isnan(labels)))
+            del grid_down
+            torch.cuda.empty_cache()
+            labels = labels.float()
+        return (- labels * F.log_softmax(inputs, dim=1)).sum(dim=1).mean()
